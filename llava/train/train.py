@@ -64,6 +64,13 @@ class ModelArguments:
     mm_use_im_patch_token: bool = field(default=True)
     mm_patch_merge_type: Optional[str] = field(default='flat')
     mm_vision_select_feature: Optional[str] = field(default="patch")
+    
+    # HSR 压缩参数
+    use_hsr_compression: bool = field(default=False, metadata={"help": "Enable HSR compression"})
+    hsr_reduction_ratio: float = field(default=0.5, metadata={"help": "HSR reduction ratio"})
+    hsr_anchor_ratio: float = field(default=0.5, metadata={"help": "HSR anchor ratio (1:1 by default)"})
+    hsr_kmeans_iter: int = field(default=10, metadata={"help": "HSR K-Means iterations"})
+    hsr_spatial_weight: float = field(default=0.1, metadata={"help": "HSR spatial weight in K-Means"})
 
 
 @dataclass

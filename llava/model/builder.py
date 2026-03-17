@@ -165,3 +165,31 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         context_len = 2048
 
     return tokenizer, model, image_processor, context_len
+
+
+def enable_hsr_compression(model, embed_dim: int, reduction_ratio: float = 0.5,
+                          anchor_ratio: float = 0.5, num_kmeans_iter: int = 10,
+                          spatial_weight: float = 0.1):
+    """
+    为已加载的模型启用 HSR 压缩
+    
+    Args:
+        model: LLaVA 模型
+        embed_dim: 视觉 Token 维度
+        reduction_ratio: 压缩比例
+        anchor_ratio: Anchor 比例
+        num_kmeans_iter: K-Means 迭代次数
+        spatial_weight: 空间距离权重
+    """
+    from llava.model.hsr_compressor import HSRCompressorLLaVA
+    
+    model.get_model().hsr_compressor = HSRCompressorLLaVA(
+        embed_dim=embed_dim,
+        reduction_ratio=reduction_ratio,
+        anchor_ratio=anchor_ratio,
+        num_kmeans_iter=num_kmeans_iter,
+        spatial_weight=spatial_weight
+    )
+    print(f"[HSR] 压缩已启用: reduction_ratio={reduction_ratio}, anchor_ratio={anchor_ratio}")
+    
+    return model

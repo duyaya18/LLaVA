@@ -20,6 +20,7 @@ import torch.nn as nn
 
 from .multimodal_encoder.builder import build_vision_tower
 from .multimodal_projector.builder import build_vision_projector
+from .hsr_compressor import HSRCompressorLLaVA
 
 from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
@@ -34,6 +35,17 @@ class LlavaMetaModel:
         if hasattr(config, "mm_vision_tower"):
             self.vision_tower = build_vision_tower(config, delay_load=True)
             self.mm_projector = build_vision_projector(config)
+
+            # HSR 压缩器（可选）
+            self.hsr_compressor = None
+            if getattr(config, 'use_hsr_compression', False):
+                self.hsr_compressor = HSRCompressorLLaVA(
+                    embed_dim=config.mm_hidden_size,
+                    reduction_ratio=getattr(config, 'hsr_reduction_ratio', 0.5),
+                    anchor_ratio=getattr(config, 'hsr_anchor_ratio', 0.5),
+                    num_kmeans_iter=getattr(config, 'hsr_kmeans_iter', 10),
+                    spatial_weight=getattr(config, 'hsr_spatial_weight', 0.1)
+                )
 
             if 'unpad' in getattr(config, 'mm_patch_merge_type', ''):
                 self.image_newline = nn.Parameter(
@@ -84,8 +96,27 @@ class LlavaMetaModel:
                 self.image_newline = nn.Parameter(
                     torch.randn(self.config.hidden_size, dtype=self.dtype) * embed_std
                 )
+        
+        # 初始化 HSR 压缩器
+        if getattr(model_args, 'use_hsr_compression', False):
+            self.config.use_hsr_compression = True
+            self.config.hsr_reduction_ratio = getattr(model_args, 'hsr_reduction_ratio', 0.5)
+            self.config.hsr_anchor_ratio = getattr(model_args, 'hsr_anchor_ratio', 0.5)
+            self.config.hsr_kmeans_iter = getattr(model_args, 'hsr_kmeans_iter', 10)
+            self.config.hsr_spatial_weight = getattr(model_args, 'hsr_spatial_weight', 0.1)
+            
+            self.hsr_compressor = HSRCompressorLLaVA(
+                embed_dim=self.config.mm_hidden_size,
+                reduction_ratio=self.config.hsr_reduction_ratio,
+                anchor_ratio=self.config.hsr_anchor_ratio,
+                num_kmeans_iter=self.config.hsr_kmeans_iter,
+                spatial_weight=self.config.hsr_spatial_weight
+            )
         else:
-            # In case it is frozen by LoRA
+            self.hsr_compressor = None
+        
+        # In case it is frozen by LoRA
+        if getattr(self, 'mm_projector', None) is not None:
             for p in self.mm_projector.parameters():
                 p.requires_grad = True
 
@@ -140,6 +171,11 @@ class LlavaMetaForCausalLM(ABC):
     def encode_images(self, images):
         image_features = self.get_model().get_vision_tower()(images)
         image_features = self.get_model().mm_projector(image_features)
+        
+        # HSR 压缩（如果启用）
+        if hasattr(self.get_model(), 'hsr_compressor') and self.get_model().hsr_compressor is not None:
+            image_features, _ = self.get_model().hsr_compressor(image_features)
+        
         return image_features
 
     def prepare_inputs_labels_for_multimodal(
